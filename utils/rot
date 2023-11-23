@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('filename')
+parser.add_argument('outpath')
+args = parser.parse_args()
+
+import healpy as hp
+r = hp.Rotator(coord='GC')
+orimap = hp.read_map(args.filename, (0,1,2))
+rotmap = r.rotate_map_alms(orimap)
+hp.write_map(args.outpath, rotmap)
+
+

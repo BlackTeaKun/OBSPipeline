@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+import argparse
+parser = argparse.ArgumentParser()
+
+parser.add_argument('noise_std')
+parser.add_argument('outname')
+args = parser.parse_args()
+
+import numpy as np
+import healpy as hp
+import os
+
+std = hp.read_map(os.path.expanduser(args.noise_std))
+m   = np.random.normal(0, std)
+
+hp.write_map(os.path.expanduser(args.outname), m)

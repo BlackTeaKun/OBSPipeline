@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('cmbinput')
+parser.add_argument('outdir')
+args = parser.parse_args()
+
+import os
+import healpy as hp
+import astropy.units as u
+
+beams = {
+    100: 9.68200 * u.arcmin,
+    143: 7.30300 * u.arcmin,
+    217: 5.02100 * u.arcmin,
+    353: 4.94400 * u.arcmin,
+    'K': 52.8 * u.arcmin,
+    95 : 19 * u.arcmin,
+    150: 11 * u.arcmin
+}
+
+ori = hp.read_map(args.cmbinput, (0,1,2))
+alms = hp.map2alm(ori)
+nside = hp.get_nside(ori)
+
+for k, v in beams.items():
+    ialm = hp.smoothalm(alms, v.to(u.rad).value, inplace=False)
+    m = hp.alm2map(ialm, nside)
+    
+    if k in [95, 150]:
+        name = 'Ali'
+    elif k == 'K':
+        name = 'WMAP'
+    else:
+        name = 'HFI'
+
+    path = os.path.join(args.outdir, f"{name}_{k}.fits")
+    hp.write_map(path, m)

@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+import argparse
+parse = argparse.ArgumentParser()
+parse.add_argument('nside', type=int)
+parse.add_argument('output_dir')
+args = parse.parse_args()
+nside = args.nside
+outdir = args.output_dir
+
+import os
+import lenspyx
+from lenspyx.utils_hp import synalm, almxfl
+import numpy as np
+import camb
+import healpy as hp
+
+ombh2 = 0.02233
+omch2 = 0.1198
+tau   = 0.054
+As    = np.exp(3.043)*1e-10
+ns    = 0.9652
+H0    = 67.37
+
+mnu   = 0.06
+r     = 0.00
+
+pars = camb.CAMBparams()
+pars.set_cosmology(H0=H0, ombh2=ombh2, omch2=omch2, mnu=mnu, omk=0, tau=tau)
+pars.InitPower.set_params(As=As, ns=ns, r=r)
+pars.set_for_lmax(7000, lens_potential_accuracy=1);
+
+result = camb.get_results(pars)
+cl = result.get_cmb_power_spectra(CMB_unit='muK', raw_cl=True)
+
+lmax_len = 3000
+dlmax = 1024
+epsilon = 1e-6
+lmax_unl, mmax_unl = lmax_len + dlmax, lmax_len + dlmax
+
+cl_len = cl['total']
+cl_unl = cl['unlensed_total']
+
+# tlm_unl = synalm(cl_unl[:, 0], lmax=lmax_unl, mmax=mmax_unl)
+# elm_unl = synalm(cl_unl[:, 1], lmax=lmax_unl, mmax=mmax_unl)
+# blm_unl = synalm(cl_unl[:, 2], lmax=lmax_unl, mmax=mmax_unl)
+
+tlm_unl, elm_unl, blm_unl = hp.synalm(cl_unl.T, lmax=lmax_unl, mmax=mmax_unl, new=True)
+
+plm = hp.synalm(cl['lens_potential'][:, 0], lmax=lmax_unl, mmax=mmax_unl)
+dlm = almxfl(plm, np.sqrt(np.arange(lmax_unl + 1, dtype=float) * np.arange(1, lmax_unl + 2)), None, False)
+
+# geom_info = ('healpix', {'nside':1024})
+# geom = lenspyx.get_geom(geom_info)
+# Tlen, Qlen, Ulen = lenspyx.alm2lenmap([tlm_unl, elm_unl], dlm, geometry=geom_info, verbose=1)
+
+gl_geom_info = ('thingauss', {'smax': 2, 'lmax':lmax_unl})
+gl_geom = lenspyx.get_geom(gl_geom_info)
+Tlen, Qlen, Ulen  = lenspyx.alm2lenmap([tlm_unl, elm_unl], dlm, geometry=gl_geom_info, verbose=1)
+elm_len, blm_len = gl_geom.map2alm_spin([Qlen, Ulen], 2, lmax_len, lmax_len, nthreads=os.cpu_count())
+tlm_len = gl_geom.map2alm(Tlen, lmax_len, lmax_len, nthreads=os.cpu_count()) # (Be aware that geom.map2alm will in general modify the input map, multplying it by the quadrature weights)
+
+outmap_len = hp.alm2map((tlm_len, elm_len, blm_len), nside)
+outmap_uln = hp.alm2map((tlm_unl, elm_unl, blm_unl), nside)
+
+hp.write_map(os.path.join(outdir, 'CMB_UNLEN.fits'), outmap_uln)
+hp.write_map(os.path.join(outdir, 'CMB_LEN.fits'), outmap_len)
+np.save(os.path.join(outdir, 'dlm'), dlm)
