@@ -32,18 +32,53 @@ void PyDriver_dealloc(PyDriver *self) {
 }
 
 int PyDriver_init(PyDriver *self, PyObject *args) {
-    PyObject *r, *theta, *chi;
     PyObject *beams;
     PyObject *tquMaps;
+    PyObject *fpClass;
     int nside, nproc, nmapmaking;
-    if (!PyArg_ParseTuple(args, "iOOOOO", &nside, &tquMaps, &beams, &r, &theta, &chi))
+    // if (!PyArg_ParseTuple(args, "iOOOOO", &nside, &tquMaps, &beams, &r, &theta, &chi))
+    //     return -1;
+    if (!PyArg_ParseTuple(args, "iOOO", &nside, &tquMaps, &beams, &fpClass))
         return -1;
+
+    PyObject *r     = PyObject_GetAttrString(fpClass, "r");
+    PyObject *theta = PyObject_GetAttrString(fpClass, "theta");
+    PyObject *chi   = PyObject_GetAttrString(fpClass, "chi");
     int npix = nside*nside*12;
 
     Config cfg;
     cfg.nside = nside;
     cfg.npix  = npix;
-    cfg.nproc = 4;
+    std::vector<std::shared_ptr<Arr2D<double>>> mixingMatrix;
+    if(PyObject_GetAttrString(fpClass, "nblock") == Py_None){
+        cfg.nproc = cfg.nblock = 4;
+        cfg.doCrosstalk = false;
+    }
+    else{
+        cfg.nblock = PyLong_AsLong(PyObject_GetAttrString(fpClass, "nblock"));
+        cfg.nproc = cfg.nblock;
+        cfg.doCrosstalk = true;
+
+        PyObject *mixingMtr = PyObject_GetAttrString(fpClass, "mixingMatrices");
+        int sz = PyArray_DIMS(mixingMtr)[1];
+        if(PyArray_TYPE(mixingMtr) != NPY_FLOAT64){
+            return -1;
+        }
+        if(!PyArray_IS_C_CONTIGUOUS(mixingMtr)){
+            return -1;
+        }
+        mixingMatrix.resize(cfg.nblock);
+        for(int i = 0; i < cfg.nblock; ++i){
+            mixingMatrix[i] = std::make_shared<Arr2D<double>>(sz, sz);
+            npy_float64 *header = (npy_float64*)PyArray_GETPTR3(mixingMtr, i, 0, 0);
+            for(int j = 0; j < sz; ++j){
+                for(int k = 0; k < sz; ++k){
+                    (*mixingMatrix[i])(j,k) = header[j*sz+k];
+                }
+            }
+        }
+    }
+    
     cfg.nmapmaking = 4;
 
     int ndet = PyArray_SIZE(r);
@@ -80,6 +115,9 @@ int PyDriver_init(PyDriver *self, PyObject *args) {
     }
     
     self->driver = new Driver(fp, mapsIn, cfg);
+    if(cfg.doCrosstalk){
+        self->driver->addMixingMatrix(mixingMatrix);
+    }
     return 0;
 }
 

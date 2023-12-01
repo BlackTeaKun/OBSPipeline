@@ -1,0 +1,7 @@
+.vscode
+*.so
+*.cache
+tmp
+*.out
+cpp2/build
+Datas

@@ -12,23 +12,26 @@ using dVec = std::vector<double>;
 using iVec = std::vector<long>;
 using VWrapper = Eigen::Map<Eigen::VectorXd>;
 
+// template<class T>
+// struct Arr2D{
+//     Arr2D(int nsamp, int ndet):m_cols(ndet), m_rows(nsamp), data(new T[ndet*nsamp]){ }
+//     T &operator()(int isamp, int idet){
+//         return data[idet*m_rows + isamp];
+//     }
+//     Arr2D(Arr2D &) = delete;
+//     Arr2D &operator=(const Arr2D &rhs) = delete;
+//     Arr2D(Arr2D &&) = delete;
+//     ~Arr2D(){delete[] data;}
+
+//     T rows(){return this->m_rows;}
+//     T cols(){return this->m_cols;}
+
+//     T* data;
+//     int m_rows, m_cols;
+// };
+
 template<class T>
-struct Arr2D{
-    Arr2D(int nsamp, int ndet):m_cols(ndet), m_rows(nsamp), data(new T[ndet*nsamp]){ }
-    T &operator()(int isamp, int idet){
-        return data[idet*m_rows + isamp];
-    }
-    Arr2D(Arr2D &) = delete;
-    Arr2D &operator=(const Arr2D &rhs) = delete;
-    Arr2D(Arr2D &&) = delete;
-    ~Arr2D(){delete[] data;}
-
-    T rows(){return this->m_rows;}
-    T cols(){return this->m_cols;}
-
-    T* data;
-    int m_rows, m_cols;
-};
+using Arr2D = Eigen::MatrixX<T>;
 
 struct BeamParams {
     BeamParams() = default;
@@ -62,8 +65,14 @@ struct FocalPlane{
 struct Config{
     bool doSysmatic;
     bool fitSysmatic;
+    bool doDeproj;
+    bool doCrosstalk;
     int nside, npix;
-    int nproc, nmapmaking;
+    int nproc, nmapmaking, nblock;
+    Config(){
+        doSysmatic = fitSysmatic = doDeproj = doCrosstalk = false;
+        nside = npix = nproc = nmapmaking = nblock = -1;
+    }
 };
 
 struct DataFlow{

@@ -160,7 +160,7 @@ def splitdict(d, rank, size):
             raise RuntimeError('??')
 
         result[k] = newv
-    return result;
+    return result
 
 
 HFIbeam = {

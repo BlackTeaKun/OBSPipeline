@@ -27,6 +27,7 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
     ./src/addleakage_impl.cxx
     ./src/addleakage_bypass_impl.cxx
     ./src/Fitter.cxx
+    ./src/crosstalk_impl.cxx
 )
 
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES PREFIX "")
@@ -41,6 +42,7 @@ target_link_libraries( ${CMAKE_PROJECT_NAME} PRIVATE
     # ${TBB_IMPORTED_TARGETS}
     TBB::tbb
     PkgConfig::HEALPIX
+    OpenMP::OpenMP_CXX
 )
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     ./src

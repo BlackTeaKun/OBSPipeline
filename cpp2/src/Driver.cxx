@@ -18,7 +18,7 @@
 
 
 Driver::Driver(FocalPlane _fp, std::map<int, Maps> _maps, Config _cfg):
-fp(_fp), maps(_maps), deriv_maps(), cfg(_cfg),nscansets(0), total_nfit(0),
+fp(_fp), maps(_maps), deriv_maps(), cfg(_cfg),nscansets(0), total_nfit(0), edgeInitilized(false),
 inputNode(g, _cfg.nproc, std::bind(&Driver::reckon, this, std::placeholders::_1)),
 samplingNode(g, _cfg.nproc, std::bind(&Driver::sampling, this, std::placeholders::_1)),
 leakageNode(g, _cfg.nproc, std::bind(&Driver::addleakage, this, std::placeholders::_1)),
@@ -27,7 +27,8 @@ joinNode(g),
 mapMakerPtrBuffer(g),
 mapMakingNode(g, tbb::flow::unlimited, std::bind(&Driver::mapmaking, this, std::placeholders::_1)),
 bcastNode(g),
-fittingNode(g, _cfg.nproc, std::bind(&Driver::fitting, this, std::placeholders::_1))
+fittingNode(g, _cfg.nproc, std::bind(&Driver::fitting, this, std::placeholders::_1)),
+crosstalkNode(g, _cfg.nproc, std::bind(&Driver::crosstalk, this, std::placeholders::_1))
 {
     for(auto &kv : maps){
         bands.push_back(kv.first);
@@ -51,12 +52,6 @@ fittingNode(g, _cfg.nproc, std::bind(&Driver::fitting, this, std::placeholders::
         }
     }
 
-    tbb::flow::make_edge(inputNode, samplingNode);
-    tbb::flow::make_edge(samplingNode, bcastNode);
-    tbb::flow::make_edge(bcastNode, tbb::flow::input_port<0>(joinNode));
-    tbb::flow::make_edge(mapMakerPtrBuffer, tbb::flow::input_port<1>(joinNode));
-    tbb::flow::make_edge(joinNode, mapMakingNode);
-    tbb::flow::make_edge(mapMakingNode, mapMakerPtrBuffer);
     for(int i = 0; i < _cfg.nmapmaking; ++i){
         auto ptr = std::make_shared<MapMaker>(_cfg.npix, bands);
         vMapMaker.push_back(ptr);
@@ -69,6 +64,7 @@ fittingNode(g, _cfg.nproc, std::bind(&Driver::fitting, this, std::placeholders::
 }
 
 void Driver::addScan(const std::vector<std::shared_ptr<CES>> &cess){
+    if( !edgeInitilized ) make_all_edges();
     for(int ices = 0; ices < cess.size(); ++ices){
         for(int i = 0; i < cfg.nproc; ++i){
             FocalPlane &ifocal = (*sub_fp)[i];
@@ -170,12 +166,10 @@ void Driver::fitting(DataFlow in){
 }
 
 void Driver::addBeamSysParams(std::map<int, BeamParams> beampara, std::map<int, DerivMaps> deriv){
+    cfg.doSysmatic = true;
     fp.beamsys = beampara;
     deriv_maps = deriv;
 
-    tbb::flow::remove_edge(samplingNode, bcastNode);
-    tbb::flow::make_edge(samplingNode, leakageNode);
-    tbb::flow::make_edge(leakageNode, bcastNode);
 
     //split to subfp
     int ndet = fp.r->size();
@@ -206,12 +200,12 @@ void Driver::addBeamSysParams(std::map<int, BeamParams> beampara, std::map<int, 
 }
 
 void Driver::addFittingScansets(std::shared_ptr<iVec> &scan_no){
+    cfg.fitSysmatic = true;
     fitScanNo = scan_no;
 }
 
 void Driver::addFittingTemplate(std::map<int, DerivMaps> temp){
     temp_maps = temp;
-    tbb::flow::make_edge(bcastNode, fittingNode);
     cfg.fitSysmatic = true;
 
     int ndet = fp.r->size();
@@ -257,10 +251,42 @@ std::map<int, std::vector<BeamParams>> Driver::getFittedParams(){
 }
 
 void Driver::addFittedParams(std::map<int, std::vector<BeamParams>> in){
-    tbb::flow::remove_edge(samplingNode, leakageNode);
-    tbb::flow::remove_edge(leakageNode, bcastNode);
-
-    tbb::flow::make_edge(samplingNode, leakageByPassNode);
-    tbb::flow::make_edge(leakageByPassNode, bcastNode);
+    cfg.doDeproj = true;
     fittedParams = in;
+}
+
+void Driver::make_all_edges(){
+    tbb::flow::make_edge(inputNode, samplingNode);
+    //tbb::flow::make_edge(samplingNode, bcastNode);
+    tbb::flow::make_edge(bcastNode, tbb::flow::input_port<0>(joinNode));
+    tbb::flow::make_edge(mapMakerPtrBuffer, tbb::flow::input_port<1>(joinNode));
+    tbb::flow::make_edge(joinNode, mapMakingNode);
+    tbb::flow::make_edge(mapMakingNode, mapMakerPtrBuffer);
+
+    tbb::flow::function_node<DataFlow, DataFlow> *lastTODNode = &samplingNode;
+    if(cfg.doSysmatic){ // beam systematic
+        if(cfg.doDeproj){
+            tbb::flow::make_edge(samplingNode, leakageByPassNode);
+            tbb::flow::make_edge(leakageByPassNode, bcastNode);
+            lastTODNode = &leakageByPassNode;
+        }
+        else{
+            tbb::flow::make_edge(samplingNode, leakageNode);
+            lastTODNode = &leakageNode;
+        }
+    }
+    if(cfg.doCrosstalk){
+        tbb::flow::make_edge(*lastTODNode, crosstalkNode);
+        lastTODNode = &crosstalkNode;
+    }
+    tbb::flow::make_edge(*lastTODNode, bcastNode);
+    if(cfg.fitSysmatic){
+        tbb::flow::make_edge(bcastNode, fittingNode);
+    }
+    edgeInitilized = true;
+}
+
+
+void Driver::addMixingMatrix(const std::vector<std::shared_ptr<Arr2D<double>>> &mixmtr){
+    mixingMtr = mixmtr;
 }
